@@ -193,7 +193,8 @@
       <div><b>Why some matches are set aside:</b> two legitimate things inflate the parry counter.
       <b style="color:#4e9e6b">Counterspell</b> lets the parry button block abilities that arrive with a loud on-screen warning — those parries almost never miss, so they say nothing about melee-parry skill.
       <b style="color:#8a5fc9">Apollo's Riposte</b> adds "successes" to the counter without the parry button being pressed at all.
-      Matches with either are shown in color but <b>excluded from the verdict</b> — the stamp is based only on what's left, where high numbers have no innocent explanation.</div>
+      Matches with either are shown in color but <b>excluded from the melee verdict</b> — the stamp is based only on what's left, where high numbers have no innocent explanation.
+      <b>Set aside is not exonerated:</b> Counterspell auto-block is the dominant cheat pattern at high MMR (hacks exist that activate only after CS is bought and trigger only on abilities targeting you). Accounts that buy Counterspell in most matches, across many heroes, with high counter numbers get their own escalation and a dedicated CS panel in the timing audit.</div>
     </div>
     <div class="board" id="board"></div>
   </section>
@@ -325,7 +326,9 @@ function distill(meta){
       const cus=new Map((last.custom_user_stats??[]).map(s=>[s.id,s.value]));
       return {acct:p.account_id,hero:p.hero_id,
         s:idS!=null?(cus.get(idS)??0):0,m:idM!=null?(cus.get(idM)??0):0,
-        itemIds:(p.items??[]).map(it=>it.item_id??it.ability_id??it.id)};
+        // [item_id, buy_time_s] pairs — buy timing feeds the Counterspell
+        // profile (early-buy-every-game-on-every-hero is a cheat signature)
+        items:(p.items??[]).map(it=>[it.item_id??it.ability_id??it.id, it.game_time_s??-1])};
     })
   };
 }
@@ -419,10 +422,17 @@ async function career(acct,depth){
     if(!rec) return;
     if((state.xbrawl&&rec.brawl)||(state.xbots&&rec.bots)) return;
     const p=rec.players.find(x=>x.acct===acct); if(!p||!rec.hasParry) return;
-    const items=[...new Set(p.itemIds.filter(i=>state.parryItems.has(i)).map(i=>state.parryItems.get(i)))];
+    // item entries: current caches store [id, buy_time_s] pairs; caches saved
+    // by older versions store bare ids (buy time unknown -> -1)
+    const entries=(p.items??p.itemIds??[]).map(e=>Array.isArray(e)?e:[e,-1]);
+    const owned=entries.filter(([i])=>state.parryItems.has(i));
+    const items=[...new Set(owned.map(([i])=>state.parryItems.get(i)))];
+    const csTimes=owned.filter(([i])=>DISCOUNT_ITEMS.has((state.parryItems.get(i)??'').toLowerCase()))
+      .map(([,t])=>t).filter(t=>t>=0);
     perMatch.push({matchId:id,s:p.s,m:p.m,hero:p.hero,start:rec.start,
       items,
       discountItem:items.some(nm=>DISCOUNT_ITEMS.has(nm.toLowerCase())),
+      csT:csTimes.length?Math.min(...csTimes):null,
       heroContam:state.contamHeroes.has(p.hero)});
   };
   // Stage 1: newest 12 matches — most exonerations are obvious immediately
@@ -483,8 +493,31 @@ async function career(acct,depth){
     }
   }
   const discounted=perMatch.length-ev.cleanSet.length;
+  // COUNTERSPELL PROFILE — the set-asides protect the MELEE verdict, but at
+  // high MMR the dominant cheat is CS auto-block, and "set aside" must not
+  // become an amnesty. Known hack behavior: activates only after CS is
+  // bought, triggers only on abilities that target YOU. Career signature:
+  // buys CS in most matches, across many heroes (including ones it makes no
+  // sense on), buys early, posts high counter selectivity in those matches.
+  // Thresholds PROVISIONAL — calibrate against population baselines.
+  const csSet=perMatch.filter(r=>r.discountItem);
+  const csS=csSet.reduce((x,r)=>x+r.s,0), csM=csSet.reduce((x,r)=>x+r.m,0);
+  const buyTs=csSet.map(r=>r.csT).filter(t=>t!=null).sort((a,b)=>a-b);
+  const csProfile={n:csSet.length,rate:perMatch.length?csSet.length/perMatch.length:0,
+    heroes:new Set(csSet.map(r=>r.hero)).size,att:csS+csM,sel:csS+csM?csS/(csS+csM):0,
+    medBuyT:buyTs.length?buyTs[Math.floor(buyTs.length/2)]:null};
+  csProfile.flagged=csProfile.n>=8&&csProfile.rate>=.6&&csProfile.heroes>=3
+    &&csProfile.att>=40&&csProfile.sel>=.6;
+  if(ev.verdict!=='confirm'&&csProfile.flagged){
+    ev.verdict='confirm';
+    ev.verdictNote='COUNTERSPELL PROFILE: bought in '+Math.round(csProfile.rate*100)+'% of matches across '
+      +csProfile.heroes+' heroes'
+      +(csProfile.medBuyT!=null?', median buy at '+Math.floor(csProfile.medBuyT/60)+':'+String(Math.floor(csProfile.medBuyT%60)).padStart(2,'0'):'')
+      +', '+Math.round(csProfile.sel*100)+'% counter selectivity in those matches ('+csProfile.att+' att). '
+      +'Melee exoneration does not apply — CS timing audit required. (provisional thresholds)';
+  }
   return {perMatch,sel:ev.raw.sel,att:ev.raw.att,dropMaxSel:ev.raw.dropMaxSel,spikes:ev.raw.spikes,
-    clean:ev.clean,cleanSet:ev.cleanSet,discounted,verdict:ev.verdict,verdictNote:ev.verdictNote,totalHistory};
+    clean:ev.clean,cleanSet:ev.cleanSet,discounted,csProfile,verdict:ev.verdict,verdictNote:ev.verdictNote,totalHistory};
 }
 
 // -------------------------------------------------- phase IV: autopsy
@@ -540,6 +573,29 @@ const eByte=h=>{
   const s=String(h);
   return /^\d{1,3}$/.test(s)?Number(s):(parseInt(s.slice(0,2),16)||0);
 };
+// Demo query results are zstd-compressed NDJSON as of the API's Jul 2026
+// change. If the server negotiates Content-Encoding the browser decompresses
+// transparently and we receive plain text — so sniff the zstd magic bytes
+// (28 B5 2F FD) instead of trusting headers or extensions. Decompression:
+// native DecompressionStream('zstd') where the browser has it, else a tiny
+// pure-JS decoder (fzstd, ~8KB) loaded on demand and cached for the session.
+const ZSTD_MAGIC=[0x28,0xB5,0x2F,0xFD];
+async function ndjsonText(buf){
+  if(!(buf.length>=4&&ZSTD_MAGIC.every((b,i)=>buf[i]===b)))
+    return new TextDecoder().decode(buf);
+  try{
+    const ds=new DecompressionStream('zstd');
+    return await new Response(new Blob([buf]).stream().pipeThrough(ds)).text();
+  }catch(e){/* browser lacks native zstd — fall through to fzstd */}
+  if(!window.fzstd){
+    log('  loading zstd decoder (browser lacks native support)…');
+    await new Promise((res,rej)=>{const s=document.createElement('script');
+      s.src='https://cdn.jsdelivr.net/npm/fzstd@0.1.1/umd/index.js';
+      s.onload=res; s.onerror=()=>rej(new Error('ZSTD_DECODER: could not load fzstd from CDN — check network, or open the result URL manually and decompress with `zstd -d`'));
+      document.head.appendChild(s);});
+  }
+  return new TextDecoder().decode(window.fzstd.decompress(buf));
+}
 const TICKRATE=60; // FALLBACK only — each autopsy measures the replay's real rate from melee (tick, game-time) pairs; this is used when a demo has too few samples to regress
 // empirical windup calibration: "hero:type" -> windup ms samples, accumulated
 // from every autopsy (assets expose melee damage but NOT timing — demos are
@@ -567,9 +623,10 @@ async function autopsy(matchId,suspects){
   const job=await submitJob(matchId,Q_ALL);
   log(`  [combined 5-table query] job ${job} — 1 submission for this match (${state.budget} left)`);
   const url=await awaitJob(job);
-  let text;
-  try{ text=await (await fetch(url)).text(); }
+  let buf;
+  try{ buf=new Uint8Array(await (await fetch(url)).arrayBuffer()); }
   catch(e){ throw new Error('RESULT_CORS: result stored off-API; open manually: '+url); }
+  const text=await ndjsonText(buf); // decoder errors surface as their own message, not as CORS
   // demux the union rows back into the five typed tables the analysis expects.
   // steamIDs were CAST to VARCHAR in SQL, so they arrive as JSON strings and
   // 64-bit precision survives without the old regex guard.
@@ -728,6 +785,32 @@ async function autopsy(matchId,suspects){
     const ownSS=ssByOwner.get(owner)??[];
     const succTicks=new Set(succs.map(s=>s.tick));
     const orphanPresses=[...rec.press.values()].filter(pt=>!succs.some(s=>s.tick-pt>=0&&s.tick-pt<=130));
+    // Counterspell audit — CORRECTED MODEL: Counterspell has no separate
+    // activation. A parry press has three outcomes: melee parried, ability
+    // blocked (parry success + SpellShield cooldown start), or plain whiff
+    // (Parry Miss). The SpellShield table therefore records SUCCESSFUL
+    // BLOCKS ONLY — there is no "burned Counterspell" visible here — and
+    // the miss pool is SHARED between melee and spell intent, unattributable
+    // without proximity/damage context we don't pull yet. High press
+    // accuracy also can't convict in the spell domain (honest blocks answer
+    // loud telegraphs and rarely miss — the original set-aside logic). The
+    // machine evidence would be cast->block timing vs enemy ability tables;
+    // until then, blocks are timestamped for stimulus review by eye.
+    const csBlockT=[],csUnmatchedT=[];
+    for(const t of ownSS){ (succs.some(s=>Math.abs(s.tick-t)<=30)?csBlockT:csUnmatchedT).push(t); }
+    // per-block forensics — the two machine-checkable CS signals:
+    // (a) NO-PRESS BLOCKS: a human's press serializes as its own row before
+    //     the block; an injected input collapses into the block's update.
+    //     Same physics as the melee too-fast column, spell domain.
+    // (b) PRESS->BLOCK GAP: a human holds the window early and eats the gap
+    //     between press and impact; an impact-timed injection lands the
+    //     block almost on the press — tiny gaps with tiny variance.
+    const csGaps=[]; let csNoPress=0;
+    for(const t of csBlockT){
+      let best=null;
+      for(const pt of rec.press.values()){ if(t-pt>=-6&&t-pt<=72&&(best==null||pt>best)) best=pt; }
+      if(best==null) csNoPress++; else csGaps.push(Math.max(0,(t-best))/rate*1000);
+    }
     for(const s of succs){
       // spell-block check FIRST: SpellShield cooldown starting within ±30
       // ticks (~0.5s) of this success = Counterspell block, not a melee parry
@@ -741,9 +824,14 @@ async function autopsy(matchId,suspects){
         if(pt!==undefined&&pt>=c.tick) reactions.push((pt-c.tick)/rate*1000);
       } else caught.unknown++;
     }
-    lines.push({acct:acct??('pawn'+owner),isSuspect:suspects.includes(acct),attempts:total,succ:succN,phantoms,caught,reactions,lightTimes,ssTicks:ownSS,orphanPresses,toClock,mmss});
+    lines.push({acct:acct??('pawn'+owner),isSuspect:suspects.includes(acct),attempts:total,succ:succN,phantoms,caught,reactions,lightTimes,ssTicks:ownSS,orphanPresses,csBlockT,csUnmatchedT,csGaps,csNoPress,toClock,mmss});
   }
   lines.sort((a,b)=>b.succ-a.succ);
+  // under the block-only model every SpellShield cooldown should pair with a
+  // parry success; unmatched ones mean either our ±0.5s window or the model
+  // itself is off for some edge case — surface it rather than hide it
+  const unmTot=lines.reduce((x,l)=>x+(l.csUnmatchedT?.length??0),0);
+  if(unmTot>0) log('  CS note: '+unmTot+' SpellShield cooldown(s) had no parry success within ±0.5s — every cooldown should pair with a block; likely a match-window artifact, worth eyeballing if it recurs');
   return lines;
 }
 
@@ -813,11 +901,12 @@ function renderBoard(){
       <div class="legend">
         <span><i class="chip c-sp"></i>high parry rate, no innocent explanation</span>
         <span><i class="chip c-hot"></i>high rate, low volume</span>
-        <span><i class="chip c-cs"></i>had Counterspell — set aside</span>
+        <span><i class="chip c-cs"></i>had Counterspell — out of melee verdict; CS-audited</span>
         <span><i class="chip c-kit"></i>${kitLabel()} — set aside</span>
         <span><i class="chip c-an"></i>had Indomitable — no effect, counts</span>
         <span><i class="chip"></i>normal match</span>
       </div>
+      ${c.csProfile?.n?`<div class="autopsy-note">Counterspell profile: bought in ${c.csProfile.n}/${c.perMatch.length} analyzed matches · ${c.csProfile.heroes} hero${c.csProfile.heroes>1?'es':''}${c.csProfile.medBuyT!=null?` · median buy ${Math.floor(c.csProfile.medBuyT/60)}:${String(Math.floor(c.csProfile.medBuyT%60)).padStart(2,'0')}`:''} · ${Math.round(c.csProfile.sel*100)}% counter selectivity in CS matches (${c.csProfile.att} att)</div>`:''}
       ${c.totalHistory!=null&&c.totalHistory<30?`<div class="autopsy-note" style="color:var(--watch)">fresh account: only ${c.totalHistory} recorded matches — context, not evidence (smurfs exist), but new accounts with unusual builds warrant re-screening</div>`:''}
       ${c.verdictNote?`<div class="autopsy-note" style="color:var(--watch)">⚠ ${c.verdictNote}</div>`:''}
       <div class="autopsy-note">${f.autNote??(c.verdict==='confirm'?'queued for timing audit':'no audit spent')}
@@ -841,12 +930,15 @@ function renderAutopsy(matchId,lines,note,metaCounts){
       // visual reaction. The flag must sit below the fastest honest human.
       const rxFlag=rx.length>=3&&rxMed<150;
       const rxDisp=rxMed===null?'-':(rx.length===1?rxMin+'ms (single parry)':`${rxMed}ms typical of ${rx.length} (fastest ${rxMin})`);
+      const csN=l.csBlockT?.length??0;
+      const csPhFlag=csN>=3&&(l.csNoPress??0)/csN>=.5;
       return `<tr class="${l.isSuspect?'suspect-row':''}">
       <td>${esc(l.acct)}${l.isSuspect?' ◀ SUSPECT':''}</td><td>${l.attempts}</td><td>${l.succ}</td>
       <td>${l.attempts?Math.round(l.succ/l.attempts*100):0}%</td>
       <td class="${rxFlag?'lightflag':''}">${rxDisp}</td>
       <td class="${phFlag?'lightflag':''}">${l.phantoms}${l.succ?` (${Math.round(ph*100)}%)`:''}</td>
-      <td class="${l.caught[1]>=2?'lightflag':''}">${l.caught[1]}</td><td>${l.caught[2]+l.caught[3]}</td><td class="muted">${l.caught.unknown}</td></tr>`;}).join('');
+      <td class="${l.caught[1]>=2?'lightflag':''}">${l.caught[1]}</td><td>${l.caught[2]+l.caught[3]}</td><td class="muted">${l.caught.unknown}</td>
+      <td class="${csN?(csPhFlag?'lightflag':''):'muted'}">${csN}${l.csNoPress?` (${l.csNoPress} no-press)`:''}</td></tr>`;}).join('');
     // physical-evidence verdict for each suspect row
     let verdicts='';
     const suspectRows=lines.filter(x=>x.isSuspect);
@@ -864,9 +956,25 @@ function renderAutopsy(matchId,lines,note,metaCounts){
       const rx=[...(l.reactions??[])].sort((a,b)=>a-b);
       const rxMed=rx.length?Math.round(rx[Math.floor(rx.length/2)]):null;
       const ph=l.succ?Math.round(l.phantoms/l.succ*100):0;
+      const csN=l.csBlockT?.length??0;
+      const csGap=[...(l.csGaps??[])].sort((a,b)=>a-b);
+      const csMedGap=csGap.length?Math.round(csGap[Math.floor(csGap.length/2)]):null;
+      const csNoShare=csN?(l.csNoPress??0)/csN:0;
       const probs=[];
       if(rxMed!==null&&rxMed<150&&rx.length>=3) probs.push(`typical reaction ${rxMed}ms — faster than any honest human, even reacting by sound`);
       if(l.succ>=4&&ph>=50) probs.push(`${ph}% of parries pressed too fast for the replay to record (script signature)`);
+      if(csN>=3&&csNoShare>=.5) probs.push(`${l.csNoPress}/${csN} Counterspell blocks with no serialized press beforehand — injected-input signature, spell domain (provisional threshold)`);
+      if(csGap.length>=3&&csMedGap!==null&&csMedGap<50) probs.push(`median press→block gap ${csMedGap}ms across ${csGap.length} blocks — impact-timed blocking, not window-holding (provisional threshold)`);
+      if(csN>0){
+        const fmt=ts=>[...ts].sort((a,b)=>a-b).map(t=>{const c=l.toClock?l.toClock(t):null;return c==null?('tick '+t):l.mmss(c);}).join(', ');
+        const review=csN>=3&&(csNoShare>=.5||(csGap.length>=3&&csMedGap<50));
+        verdicts+=`<div class="autopsy-note" style="border:none;padding-top:4px">
+          <b>${esc(l.acct)}</b> — <b>Counterspell audit: ${review?'REPLAY REVIEW RECOMMENDED':'no mechanical anomaly'}</b> —
+          ${csN} block${csN>1?'s':''} at scoreboard clock ${fmt(l.csBlockT)} ·
+          ${l.csNoPress??0}/${csN} with no serialized press${csMedGap!==null?` · median press→block gap ${csMedGap}ms`:''}.
+          One button, three outcomes — misses can't be attributed between domains, and block accuracy is normal for honest players answering loud telegraphs, so the stats alone convict no one.
+          ${review?`Review each block: <i>could they see or hear the cast coming?</i> Blocking telegraphed casts or predictable DOT ticks is legitimate; repeatedly blocking abilities that specifically target them, arriving from fog with no cue, is impossible information — clip those.`:`Timestamps provided if you want eyes on it anyway.`}</div>`;
+      }
       if(l.caught[1]>=2){
         const conv=l.lightTimes.map(t=>l.toClock?l.toClock(t):null);
         const ts=conv.some(x=>x!=null)
@@ -894,12 +1002,14 @@ function renderAutopsy(matchId,lines,note,metaCounts){
       ${verdicts}
       <div class="scroll"><table><thead><tr><th>player</th><th>parries thrown</th><th>parries landed</th><th>hit rate</th>
       <th>reaction time</th><th>too-fast presses</th>
-      <th>vs no-warning attacks</th><th>vs telegraphed attacks</th><th>vs abilities / unclear</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <th>vs no-warning attacks</th><th>vs telegraphed attacks</th><th>vs abilities / unclear</th>
+      <th>CS blocks</th></tr></thead><tbody>${rows}</tbody></table></div>
       <div class="howto">
         <div><b>Reaction time</b> — how long after the attacker started their swing the player pressed parry. Visual reaction takes ~200ms; players who swap the heavy-melee sound for a louder cue react by ear at ~150-170ms, which is legitimate. One fast parry is a good read; a typical value under 150ms across several parries flags red — that's faster than any honest human, script territory.</div>
         <div><b>Too-fast presses</b> — the parry landed, but the press was so close to the hit that the replay never captured it separately. Humans press early and hopeful, so this is rare; a last-instant script does it constantly.</div>
         <div><b>Vs no-warning attacks</b> — light jabs give ~0.1s of warning. Parrying one is luck or an already-open window; parrying several on reaction isn't humanly possible — flags red at 2+.</div>
-        <div><b>Vs abilities / unclear</b> — includes Counterspell parries (they counter abilities, not melees) and moments the replay didn't record cleanly. A big number here on a Counterspell buyer is normal, not suspicious.</div>
+        <div><b>Vs abilities / unclear</b> — includes Counterspell parries (they counter abilities, not melees) and moments the replay didn't record cleanly. A big number here on a Counterspell buyer is normal, not suspicious <i>on its own</i> — that's what the CS columns adjudicate.</div>
+        <div><b>CS blocks</b> — parry successes that started a SpellShield cooldown: abilities blocked via Counterspell. One button, three outcomes (melee parried / ability blocked / whiff), so misses are a <i>shared</i> pool and block accuracy alone convicts no one — honest blocks answer loud telegraphs. Two mechanical signals decide whether replay review is warranted: <b>no-press blocks</b> (no press row serialized before the block — injected-input signature, flags at 50%+ of 3+ blocks) and <b>press→block gap</b> (humans hold the window early; impact-timed injection shows a tiny, consistent gap — flags under 50ms median at 3+). Both thresholds are provisional pending calibration. When either fires, the suspect note stamps <b>REPLAY REVIEW RECOMMENDED</b> with every block timestamped; the question per block: <i>could they perceive the cast?</i></div>
         <div>Players who never pressed parry are omitted. Kit abilities like Apollo's Riposte don't use the parry button, so they never appear here — that's why a Riposte user's numbers can be far below their match-counter stats (see the reconciliation note above the table when it applies).</div>
         <div>Attack matching is approximate — treat counts as close, not exact.</div>
       </div>`;
@@ -956,10 +1066,15 @@ $('run').onclick=async()=>{
 // timing behavior, and its replay is far more likely to be retrievable.
 function auditCandidates(f){
   const c=f.career??{};
+  // CS-profile accounts get audited on their COUNTERSPELL matches first —
+  // the auto-block cheat is dormant in matches without the item, so a
+  // recency-only pick could audit a match where there's nothing to find
+  const csFirst=!!c.csProfile?.flagged;
   const pool=[...(c.clean?.spikes??[]),...(c.spikes??[]),
     ...([...(c.perMatch??[])].filter(m=>(m.s+m.m)>=4))];
   const seen=new Set(); const out=[];
-  for(const m of pool.sort((a,b)=>(b.start??0)-(a.start??0))){
+  for(const m of pool.sort((a,b)=>
+      (csFirst?(b.discountItem?1:0)-(a.discountItem?1:0):0)||(b.start??0)-(a.start??0))){
     if(seen.has(m.matchId)) continue; seen.add(m.matchId); out.push(m);
   }
   if(!out.length&&f.target) out.push(f.target);
@@ -1032,7 +1147,7 @@ $('ex-md').onclick=()=>{
   for(const f of state.flags){
     const c=f.career;
     md+=`\n### Account ${f.acct}\n- lobby screen: ${f.succ}S/${f.miss}M (${Math.round(f.sel*100)}%) over ${f.matches} shared lobbies\n`;
-    if(c&&!c.error) md+=`- career: ${Math.round(c.sel*100)}% over ${c.att} attempts, drop-max ${Math.round(c.dropMaxSel*100)}%, ${c.spikes.length} spike matches → **${c.verdict.toUpperCase()}**\n- ${f.autNote??''}\n`;
+    if(c&&!c.error) md+=`- career: ${Math.round(c.sel*100)}% over ${c.att} attempts, drop-max ${Math.round(c.dropMaxSel*100)}%, ${c.spikes.length} spike matches → **${c.verdict.toUpperCase()}**\n${c.csProfile?.n?`- counterspell: ${c.csProfile.n}/${c.perMatch.length} matches, ${c.csProfile.heroes} heroes${c.csProfile.medBuyT!=null?`, median buy ${Math.floor(c.csProfile.medBuyT/60)}:${String(Math.floor(c.csProfile.medBuyT%60)).padStart(2,'0')}`:''}, ${Math.round(c.csProfile.sel*100)}% counter selectivity (${c.csProfile.att} att)\n`:''}- ${f.autNote??''}\n`;
   }
   md+='\n---\n*Flags are statistical leads, not accusations.*\n';
   const blob=new Blob([md],{type:'text/markdown'});

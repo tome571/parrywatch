@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PARRYWATCH — Bureau of Melee Forensics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700;900&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#12151c; --ink2:#1a1f29; --panel:#20263300; --line:#2c3547;
+    --paper:#d8d2c4; --paper-dim:#9a958a;
+    --amber:#e8a33d; --amber-dim:#8a6526;
+    --clean:#3fa08c; --confirm:#c4453a; --watch:#c9a227;
+    --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+    --disp:'Big Shoulders Display','Arial Narrow',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0}
+  html{background:var(--ink)}
+  body{
+    font-family:var(--mono);font-size:13px;line-height:1.55;color:var(--paper);
+    background:
+      radial-gradient(1200px 500px at 70% -10%, #1e2735 0%, transparent 60%),
+      var(--ink);
+    min-height:100vh;padding:0 0 80px;
+  }
+  a{color:var(--amber)}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+
+  /* ---------- masthead ---------- */
+  header{border-bottom:1px solid var(--line);padding:28px 0 18px;margin-bottom:26px}
+  .masthead{display:flex;align-items:baseline;gap:18px;flex-wrap:wrap}
+  h1{font-family:var(--disp);font-weight:900;font-size:52px;letter-spacing:.04em;color:var(--paper);line-height:.9}
+  h1 .tick{color:var(--amber)}
+  .bureau{font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--paper-dim)}
+  .casefile{margin-left:auto;font-size:11px;color:var(--paper-dim);text-align:right}
+  .casefile b{color:var(--amber)}
+
+  /* ---------- intake ---------- */
+  .intake{border:1px solid var(--line);background:var(--ink2);padding:18px;display:grid;
+    grid-template-columns:minmax(260px,2.2fr) repeat(3,minmax(90px,.6fr)) minmax(150px,1fr) auto;gap:12px;align-items:end}
+  label{display:block;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--paper-dim);margin-bottom:5px}
+  input{width:100%;background:var(--ink);border:1px solid var(--line);color:var(--paper);
+    font-family:var(--mono);font-size:13px;padding:9px 10px;border-radius:0}
+  input:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
+  button{font-family:var(--disp);font-weight:700;font-size:17px;letter-spacing:.08em;
+    background:var(--amber);color:var(--ink);border:0;padding:10px 26px;cursor:pointer}
+  button:hover{background:#f0b458}
+  button:focus-visible{outline:2px solid var(--paper);outline-offset:2px}
+  button[disabled]{background:var(--amber-dim);cursor:default}
+  button.ghost{background:transparent;color:var(--amber);border:1px solid var(--amber);font-size:13px;padding:6px 14px}
+  .statusline{margin-top:10px;font-size:12px;color:var(--paper-dim);min-height:18px}
+  .statusline b{color:var(--amber)}
+
+  /* ---------- phase rail ---------- */
+  .rail{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);
+    border:1px solid var(--line);margin:26px 0}
+  .phase{background:var(--ink2);padding:12px 14px;position:relative}
+  .phase .no{font-family:var(--disp);font-weight:900;font-size:26px;color:var(--line)}
+  .phase.active .no,.phase.done .no{color:var(--amber)}
+  .phase .nm{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--paper-dim)}
+  .phase .ct{font-size:12px;color:var(--paper);margin-top:2px;min-height:18px}
+  .phase.active{box-shadow:inset 0 -2px 0 var(--amber)}
+
+  /* ---------- sections ---------- */
+  section{margin:34px 0}
+  h2{font-family:var(--disp);font-weight:700;font-size:24px;letter-spacing:.06em;
+    border-bottom:1px solid var(--line);padding-bottom:6px;margin-bottom:14px;color:var(--paper)}
+  h2 small{font-family:var(--mono);font-size:11px;color:var(--paper-dim);letter-spacing:0;margin-left:12px}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:var(--paper-dim);
+    text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;white-space:nowrap}
+  th:hover{color:var(--amber)}
+  td{padding:6px 10px;border-bottom:1px solid #232a3a;white-space:nowrap}
+  tr.you td{color:var(--amber)}
+  tr.flagged td:first-child{box-shadow:inset 3px 0 0 var(--confirm)}
+  .sel-hot{color:var(--confirm);font-weight:600}
+  .sel-warm{color:var(--watch)}
+  .muted{color:var(--paper-dim)}
+
+  /* ---------- case board ---------- */
+  .board{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:16px}
+  .case{border:1px solid var(--line);background:linear-gradient(180deg,#212836,#1b2130);
+    padding:16px;position:relative;overflow:hidden}
+  .case{display:flex;flex-direction:column}
+  .case h3{font-family:var(--disp);font-weight:700;font-size:20px;letter-spacing:.05em;padding-right:120px}
+  .case .sub{font-size:11px;color:var(--paper-dim);margin-bottom:10px;padding-right:120px;min-height:46px}
+  .case .autopsy-note{margin-top:auto}
+  .kv{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:10px 0}
+  .kv div{border-left:2px solid var(--line);padding-left:8px}
+  .kv b{display:block;font-size:16px}
+  .kv span{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-dim)}
+  .strip{display:flex;align-items:flex-end;gap:2px;height:44px;margin:12px 0 4px;border-bottom:1px solid var(--line);padding-bottom:2px}
+  .strip i{display:block;width:6px;background:#3a465e;min-height:2px}
+  .strip i.sp{background:var(--confirm)}
+  .strip i.hot{background:var(--watch)}
+  .strip i.cs{background:#4e9e6b}   /* Counterspell — vitality green */
+  .strip i.kit{background:#8a5fc9}  /* kit hero (riposte) — spirit purple */
+  .strip i.an{background:#4a6b8a}   /* Indomitable — steel, counts clean */
+  .legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:9.5px;
+    letter-spacing:.08em;text-transform:uppercase;color:var(--paper-dim)}
+  .legend .chip{display:inline-block;width:9px;height:9px;margin-right:5px;vertical-align:-1px;background:#3a465e}
+  .legend .c-sp{background:var(--confirm)} .legend .c-hot{background:var(--watch)}
+  .legend .c-cs{background:#4e9e6b} .legend .c-kit{background:#8a5fc9} .legend .c-an{background:#4a6b8a}
+  .striplab{font-size:9.5px;color:var(--paper-dim);letter-spacing:.1em;text-transform:uppercase}
+  .stamp{position:absolute;top:14px;right:-8px;transform:rotate(8deg);
+    font-family:var(--disp);font-weight:900;font-size:20px;letter-spacing:.1em;
+    border:3px double currentColor;padding:2px 14px;opacity:.9;background:rgba(18,21,28,.55)}
+  .stamp.confirm{color:var(--confirm)}
+  .stamp.clean{color:var(--clean)}
+  .stamp.watch{color:var(--watch)}
+  .case .autopsy-note{font-size:11px;color:var(--paper-dim);margin-top:8px;border-top:1px dashed var(--line);padding-top:8px}
+
+  /* ---------- autopsy ---------- */
+  .aut{border:1px solid var(--line);background:var(--ink2);padding:14px;margin-bottom:16px}
+  .aut .scroll{overflow-x:auto}
+  .aut th{white-space:normal;line-height:1.3;vertical-align:bottom}
+  .howto{margin-top:12px;border-top:1px dashed var(--line);padding-top:10px;
+    display:grid;gap:7px;font-size:11.5px;color:var(--paper-dim)}
+  .howto b{color:var(--paper)}
+  .aut h3{font-family:var(--disp);font-size:19px;letter-spacing:.05em;margin-bottom:8px}
+  .aut .suspect-row td{color:var(--confirm);font-weight:600}
+  .lightflag{color:var(--confirm);font-weight:700}
+
+  /* ---------- log ---------- */
+  #log{background:#0d1016;border:1px solid var(--line);padding:12px;font-size:11.5px;
+    max-height:220px;overflow:auto;color:#8f9bb0;white-space:pre-wrap}
+  .exports{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
+
+  .footnote{margin-top:40px;font-size:11px;color:var(--paper-dim);border-top:1px solid var(--line);padding-top:14px}
+  @media (max-width:860px){
+    .intake{grid-template-columns:1fr 1fr}
+    h1{font-size:38px}
+    .rail{grid-template-columns:1fr 1fr}
+  }
+  @media (prefers-reduced-motion:no-preference){
+    .phase.active .no{animation:pulse 1.6s ease-in-out infinite}
+    @keyframes pulse{50%{opacity:.45}}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap masthead">
+    <div>
+      <h1>PARRY<span class="tick">/</span>WATCH</h1>
+      <div class="bureau">Bureau of Melee Forensics · Deadlock Division</div>
+    </div>
+    <div class="casefile">
+      data: <b>deadlock-api.com</b> (community)<br>
+      flags are leads · verdicts need evidence
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="intake">
+    <div>
+      <label for="sid">Steam ID · profile URL · account ID</label>
+      <input id="sid" placeholder="https://steamcommunity.com/profiles/7656119...">
+    </div>
+    <div><label for="nm">Matches</label><input id="nm" type="number" value="50" min="5" max="100"></div>
+    <div><label for="nc">Career depth</label><input id="nc" type="number" value="40" min="10" max="100"></div>
+    <div><label for="nb" title="max demo-query submissions this run — one combined query audits one whole match">Audit budget</label><input id="nb" type="number" value="18" min="0" max="200"></div>
+    <div><label for="key">API key (optional, raises limits)</label><input id="key" placeholder="x-api-key"></div>
+    <div><button id="run">OPEN CASE</button></div>
+  </div>
+  <div class="statusline" style="color:var(--paper)">
+    <label style="display:inline;font-size:11px;letter-spacing:.08em"><input type="checkbox" id="xbrawl" checked style="width:auto;margin-right:4px">exclude Street Brawl</label>
+    <label style="display:inline;font-size:11px;letter-spacing:.08em;margin-left:14px"><input type="checkbox" id="xbots" checked style="width:auto;margin-right:4px">exclude bot matches</label>
+  </div>
+  <div class="statusline" id="status">Enter an ID to begin. Everything runs in your browser — no server, no install.</div>
+
+  <div class="rail" id="rail">
+    <div class="phase" id="ph0"><div class="no">I</div><div class="nm">Lobby screen</div><div class="ct"></div></div>
+    <div class="phase" id="ph1"><div class="no">II</div><div class="nm">Flags</div><div class="ct"></div></div>
+    <div class="phase" id="ph2"><div class="no">III</div><div class="nm">Career investigation</div><div class="ct"></div></div>
+    <div class="phase" id="ph3"><div class="no">IV</div><div class="nm">Timing audit</div><div class="ct"></div></div>
+  </div>
+
+  <section id="sec-screen" hidden>
+    <h2>Lobby screen <small id="screen-sub"></small></h2>
+    <div class="howto" style="margin:0 0 10px;border-top:none;padding-top:0">
+      <div><b>Selectivity</b> = parries landed ÷ parries thrown. Humans land roughly 30% — whiffing constantly is normal. High selectivity alone proves nothing (items and hero kits inflate it); that's what the investigation below is for.</div>
+    </div>
+    <div style="overflow-x:auto"><table id="tbl-screen"></table></div>
+  </section>
+
+  <section id="sec-board" hidden>
+    <h2>Case board <small>every flagged account gets a full investigation before any verdict</small></h2>
+    <div class="howto" style="margin:0 0 14px;border-top:none;padding-top:0">
+      <div><b>Why some matches are set aside:</b> two legitimate things inflate the parry counter.
+      <b style="color:#4e9e6b">Counterspell</b> lets the parry button block abilities that arrive with a loud on-screen warning — those parries almost never miss, so they say nothing about melee-parry skill.
+      <b style="color:#8a5fc9">Apollo's Riposte</b> adds "successes" to the counter without the parry button being pressed at all.
+      Matches with either are shown in color but <b>excluded from the verdict</b> — the stamp is based only on what's left, where high numbers have no innocent explanation.</div>
+    </div>
+    <div class="board" id="board"></div>
+  </section>
+
+  <section id="sec-aut" hidden>
+    <h2>Timing audits <small>parry-by-parry evidence pulled from the match replay</small></h2>
+    <div id="autopsies"></div>
+  </section>
+
+  <section>
+    <h2>Field log</h2>
+    <div id="log"></div>
+    <div class="exports">
+      <button class="ghost" id="ex-json">Export screen JSON</button>
+      <button class="ghost" id="ex-md">Export report MD</button>
+      <button class="ghost" id="ex-cache">Save session cache</button>
+      <button class="ghost" id="im-cache">Load cache…</button>
+      <input type="file" id="im-cache-file" accept=".json" style="display:none">
+    </div>
+  </section>
+
+  <div class="footnote">
+    Calibration from live investigation (July 2026): human parry selectivity runs ~10–50% and misses usually outnumber
+    successes. One hot match means nothing — career persistence is the signal. Street Brawl and bot matches can be excluded via the checkboxes above
+    (parry stats are inflated in those modes). This tool produces statistical leads, not accusations; a person is behind every account.
+  </div>
+</div>
+
+<script>
+'use strict';
+const BASE='https://api.deadlock-api.com';
+const S64=76561197960265728n;
+const $=id=>document.getElementById(id);
+const log=m=>{const el=$('log');el.textContent+=m+'\n';el.scrollTop=el.scrollHeight;};
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+const state={you:null,rows:[],flags:[],autopsies:[],meta:new Map(),budget:18,running:false,
+  heroNames:new Map(),parryItems:new Map(),contamHeroes:new Set()};
+
+// Assets: hero names + the two parry-adjacent items, resolved live.
+// contamHeroes: heroes whose KIT writes to the parry counter (riposte-style).
+// Seeded from the population baseline study (hero 77 = Fencer/riposte kit;
+// hero 3 provisional pending distinct-account confirmation).
+// ITEM POLICY (empirically calibrated):
+//   Counterspell — routes through the parry button vs telegraphed abilities;
+//     PROVEN counter contaminant -> matches discounted from clean career.
+//   Indomitable (auto_cleanse) — plays the parry sound but does NOT write to
+//     the parry counters. Verified empirically (July 2026): Indomitable-only
+//     matches (no Counterspell, no kit hero) pooled 46S/99M = 32% vs 30% clean
+//     baseline, 0/19 zero-miss games, no per-account lift across 8 careers.
+//     -> annotate only, counts toward the clean career.
+const DISCOUNT_ITEMS=new Set(['counterspell']);
+const CONTAM_HERO_SEED=[77];
+(async()=>{
+  // main API mirrors the assets endpoints behind wildcard CORS (works from file://)
+  for(const u of [BASE+'/v1/assets/heroes','https://assets.deadlock-api.com/v2/heroes']){
+    try{const r=await fetch(u);if(!r.ok)continue;
+      for(const h of await r.json()) state.heroNames.set(h.id,h.name??String(h.id));break;}catch{}
+  }
+  for(const u of [BASE+'/v1/assets/items','https://assets.deadlock-api.com/v2/items']){
+    try{const r=await fetch(u);if(!r.ok)continue;
+      for(const it of await r.json()){
+        const nm=(it.name??'').toLowerCase();
+        if(nm.includes('counterspell')||nm.includes('indomitable')) state.parryItems.set(it.id,it.name);
+      }break;}catch{}
+  }
+  // hardcoded fallback (from assets dump, July 2026) if both lookups fail:
+  // Counterspell = upgrade_counterspell, Indomitable = upgrade_auto_cleanse
+  if(!state.parryItems.size){
+    state.parryItems.set(1414025773,'Counterspell');
+    state.parryItems.set(951866250,'Indomitable');
+  }
+  if(!state.heroNames.size) log('assets lookup unreachable — hero ids shown raw; item discounting inactive this run');
+  for(const h of CONTAM_HERO_SEED) state.contamHeroes.add(h);
+})();
+const heroLabel=id=>state.heroNames.get(id)??String(id);
+const kitLabel=()=>{const ns=[...state.contamHeroes].map(heroLabel);return ns.length?ns.join('/')+' (Riposte kit)':'kit hero';};
+
+function resolveId(input){
+  const m64=input.match(/7656119\d{10}/); if(m64) return Number(BigInt(m64[0])-S64);
+  const u=input.match(/\[?U:1:(\d+)\]?/i); if(u) return Number(u[1]);
+  if(/^\d{1,10}$/.test(input.trim())) return Number(input.trim());
+  return null;
+}
+function headers(){const k=$('key').value.trim();return {'Content-Type':'application/json',...(k?{'x-api-key':k}:{})};}
+state.gap=110; state.okStreak=0; // ~9 launches/s, under the documented 100req/10s IP ceiling; dev confirmed metadata is low-load for them
+async function get(url,retries=4){
+  const r=await fetch(url,{headers:headers()});
+  if(r.status===429){
+    // match-history 429s STILL CARRY DATA: the API only rate-limits the
+    // Steam-GC refresh path (bot-friend accounts, 10/h), and on 429 it falls
+    // back to serving the stored ClickHouse history in the response body
+    // (Called-Steam: false). Stored history is exactly what career analysis
+    // needs — same ingested data that produced the flag — so use it.
+    if(url.includes('match-history')){
+      try{
+        const body=await r.json();
+        log('  match-history: Steam-refresh limited — using stored history from the 429 body (complete for ingested matches)');
+        return body;
+      }catch(e){ throw new Error('HISTORY_LIMIT'); }
+    }
+    if(!retries) throw new Error('429 — gave up: '+url);
+    // adaptive: the API is pushing back — slow the WHOLE pipeline, not just this request
+    state.gap=Math.min(state.gap*2,2000); state.okStreak=0;
+    log(`rate limited — backing off 8s; pacing widened to ${state.gap}ms between requests`);
+    await sleep(8000);
+    return get(url,retries-1);
+  }
+  if(!r.ok) throw new Error(r.status+' — '+url);
+  if(++state.okStreak>=40&&state.gap>110){state.gap=Math.max(110,Math.round(state.gap/2));state.okStreak=0;log(`pacing recovered to ${state.gap}ms`);}
+  return r.json();
+}
+// Distilled match record: everything the screen/career phases need, ~2KB
+// instead of the ~4MB raw blob. Cache is exportable/importable so re-runs
+// skip the fetch phase entirely.
+function distill(meta){
+  const info=meta.match_info??meta;
+  const reg=info.custom_user_stats??[];
+  const idS=reg.find(e=>e.name==='Parry Success')?.id;
+  const idM=reg.find(e=>e.name==='Parry Miss')?.id;
+  return {
+    brawl:Array.isArray(info.street_brawl_rounds)&&info.street_brawl_rounds.length>0,
+    bots:(info.bot_difficulty??0)>0,
+    start:info.start_time??0,
+    hasParry:idS!=null||idM!=null,
+    players:(info.players??[]).map(p=>{
+      const last=(p.stats??[]).at(-1)??{};
+      const cus=new Map((last.custom_user_stats??[]).map(s=>[s.id,s.value]));
+      return {acct:p.account_id,hero:p.hero_id,
+        s:idS!=null?(cus.get(idS)??0):0,m:idM!=null?(cus.get(idM)??0):0,
+        itemIds:(p.items??[]).map(it=>it.item_id??it.ability_id??it.id)};
+    })
+  };
+}
+let lastLaunch=0;
+async function getRec(matchId){
+  if(state.meta.has(matchId)) return state.meta.get(matchId);
+  // pace request STARTS by the adaptive gap (150ms baseline, widens on 429s)
+  const wait=Math.max(0,lastLaunch+state.gap-Date.now());
+  lastLaunch=Date.now()+wait;
+  if(wait) await sleep(wait);
+  const meta=await get(`${BASE}/v1/matches/${matchId}/metadata`);
+  const rec=distill(meta);
+  state.meta.set(matchId,rec);
+  return rec;
+}
+// fetch a list of match records with limited concurrency (3 in flight)
+async function getRecs(ids,onEach){
+  const out=new Map(); let i=0;
+  const worker=async()=>{
+    while(i<ids.length){
+      const id=ids[i++];
+      try{ out.set(id,await getRec(id)); }catch(e){ out.set(id,null); }
+      onEach?.(out.size,ids.length);
+    }
+  };
+  await Promise.all([0,1,2,3,4,5].map(worker)); // 6-wide: launch rate is still governed by the global gap, this just hides latency
+  return out;
+}
+const isBrawl=i=>state.xbrawl&&Array.isArray(i.street_brawl_rounds)&&i.street_brawl_rounds.length>0;
+const isBots=i=>state.xbots&&(i.bot_difficulty??0)>0;
+function parryOf(info,acct){
+  const reg=info.custom_user_stats??[];
+  const idS=reg.find(e=>e.name==='Parry Success')?.id, idM=reg.find(e=>e.name==='Parry Miss')?.id;
+  const p=(info.players??[]).find(x=>x.account_id===acct); if(!p) return null;
+  const last=(p.stats??[]).at(-1)??{};
+  const cus=new Map((last.custom_user_stats??[]).map(s=>[s.id,s.value]));
+  return {s:idS!=null?(cus.get(idS)??0):0, m:idM!=null?(cus.get(idM)??0):0, hero:p.hero_id,
+          k:p.kills,d:p.deaths,a:p.assists};
+}
+function phase(n,txt,mode){
+  for(let i=0;i<4;i++){const p=$('ph'+i);p.classList.toggle('active',i===n&&mode!=='done');p.classList.toggle('done',i<n||(i===n&&mode==='done'));}
+  if(txt!=null) $('ph'+n).querySelector('.ct').textContent=txt;
+}
+
+// -------------------------------------------------- phase I+II: screen + flags
+async function screen(you,maxMatches){
+  phase(0,'pulling history…');
+  const hist=await get(`${BASE}/v1/players/${you}/match-history`);
+  const matches=(Array.isArray(hist)?hist:hist.matches??[]).slice(0,maxMatches);
+  const ledger=new Map(); let done=0,skipped=0;
+  const ids=matches.map(m=>m.match_id??m.matchId??m.id).filter(Boolean);
+  const recs=await getRecs(ids,(d,t)=>phase(0,`fetching ${d}/${t}…`));
+  for(const id of ids){
+    const rec=recs.get(id); if(!rec){log('  skip '+id+': fetch failed');continue;}
+    if((state.xbrawl&&rec.brawl)||(state.xbots&&rec.bots)){skipped++;continue;}
+    if(!rec.hasParry) continue;
+    for(const p of rec.players){
+      if(!ledger.has(p.acct)) ledger.set(p.acct,{matches:0,succ:0,miss:0,heroes:new Set(),perMatch:[]});
+      const r=ledger.get(p.acct);
+      r.matches++;r.succ+=p.s;r.miss+=p.m;r.heroes.add(p.hero);
+      if(p.s+p.m>0) r.perMatch.push({matchId:id,s:p.s,m:p.m,hero:p.hero,start:rec.start});
+    }
+    done++; phase(0,`${done}/${matches.length} screened · ${skipped} brawl/bot skipped`);
+  }
+  const rows=[...ledger.entries()].map(([acct,r])=>({acct,...r,att:r.succ+r.miss,sel:r.succ+r.miss?r.succ/(r.succ+r.miss):0}))
+    .filter(r=>r.att>0).sort((a,b)=>b.sel-a.sel||b.att-a.att);
+  phase(0,`${done} matches · ${rows.length} accounts`,'done');
+  // Flag rules: sustained high selectivity at volume, OR perfection at any
+  // volume — zero misses at 6+ successes is ~1-in-4000 against the 30% human
+  // baseline; the (cheap) career phase adjudicates from there.
+  const flags=rows.filter(r=>r.acct!==you&&((r.sel>=.70&&r.att>=12)||(r.sel>=.60&&r.att>=25)||(r.miss===0&&r.succ>=6)));
+  for(const f of flags){f.severity=f.sel*Math.log2(f.att+1);f.target=[...f.perMatch].sort((a,b)=>(b.s-b.m)-(a.s-a.m))[0];}
+  flags.sort((a,b)=>b.severity-a.severity);
+  phase(1,flags.length+' flagged','done');
+  return {rows,flags};
+}
+
+// -------------------------------------------------- phase III: career
+async function career(acct,depth){
+  let hist; try{hist=await get(`${BASE}/v1/players/${acct}/match-history`);}
+  catch(e){
+    if(e.message==='HISTORY_LIMIT') return {error:'match-history rate limited AND the stored-history fallback body was unreadable — rare; retry this account'};
+    return {error:e.message};
+  }
+  const histIds=(Array.isArray(hist)?hist:hist.matches??[])
+    .map(m=>m.match_id??m.matchId??m.id).filter(Boolean);
+  const totalHistory=histIds.length; // freshness signal: tiny history = new account
+  const allIds=histIds.slice(0,depth);
+  const perMatch=[];
+  const ingest=(id,rec)=>{
+    if(!rec) return;
+    if((state.xbrawl&&rec.brawl)||(state.xbots&&rec.bots)) return;
+    const p=rec.players.find(x=>x.acct===acct); if(!p||!rec.hasParry) return;
+    const items=[...new Set(p.itemIds.filter(i=>state.parryItems.has(i)).map(i=>state.parryItems.get(i)))];
+    perMatch.push({matchId:id,s:p.s,m:p.m,hero:p.hero,start:rec.start,
+      items,
+      discountItem:items.some(nm=>DISCOUNT_ITEMS.has(nm.toLowerCase())),
+      heroContam:state.contamHeroes.has(p.hero)});
+  };
+  // Stage 1: newest 12 matches — most exonerations are obvious immediately
+  const quickIds=allIds.slice(0,12);
+  let recs=await getRecs(quickIds,(d,t)=>phase(2,`${acct}: quick pass ${d}/${t}`));
+  for(const id of quickIds) ingest(id,recs.get(id));
+  const quickStat=(()=>{
+    const cs=perMatch.filter(r=>!r.discountItem&&!r.heroContam);
+    const tS=cs.reduce((x,r)=>x+r.s,0), tM=cs.reduce((x,r)=>x+r.m,0);
+    const spikes=cs.filter(r=>(r.s+r.m)>=8&&r.s/(r.s+r.m)>=.70).length;
+    const rS=perMatch.reduce((x,r)=>x+r.s,0), rM=perMatch.reduce((x,r)=>x+r.m,0);
+    return {cleanAtt:tS+tM,cleanSel:tS+tM?tS/(tS+tM):0,spikes,rawSel:rS+rM?rS/(rS+rM):0,rawAtt:rS+rM};
+  })();
+  const obviouslyHuman=quickStat.cleanAtt>=15&&quickStat.cleanSel<0.50&&quickStat.spikes===0
+    &&!(quickStat.rawSel>=0.60&&quickStat.rawAtt>=40);
+  if(!obviouslyHuman){
+    // Stage 2: full depth for anything not clearly human
+    const restIds=allIds.slice(12);
+    recs=await getRecs(restIds,(d,t)=>phase(2,`${acct}: full career ${d}/${t}`));
+    for(const id of restIds) ingest(id,recs.get(id));
+  }
+  const stat=set=>{
+    const tS=set.reduce((x,r)=>x+r.s,0), tM=set.reduce((x,r)=>x+r.m,0);
+    const best=set.reduce((b,r)=>(r.s-r.m)>((b?.s??0)-(b?.m??0))?r:b,null);
+    const dS=tS-(best?.s??0), dM=tM-(best?.m??0);
+    const spikes=set.filter(r=>(r.s+r.m)>=8&&r.s/(r.s+r.m)>=.70).sort((a,b)=>b.start-a.start);
+    return {tS,tM,att:tS+tM,sel:tS+tM?tS/(tS+tM):0,dropMaxSel:dS+dM?dS/(dS+dM):0,spikes};
+  };
+  const evaluate=()=>{
+    perMatch.sort((a,b)=>a.start-b.start);
+    const raw=stat(perMatch);
+    const cleanSet=perMatch.filter(r=>!r.discountItem&&!r.heroContam);
+    const clean=stat(cleanSet);
+    let verdict='clean', verdictNote='';
+    if(clean.spikes.length>=3||(clean.spikes.length>=2&&clean.dropMaxSel>=.55)||(clean.dropMaxSel>=.60&&clean.att>=30)) verdict='confirm';
+    else if(clean.spikes.length>=1&&clean.dropMaxSel>=.45) verdict='watch';
+    // ADVERSARIAL GUARD: a cheater could buy Counterspell every game to get
+    // their whole career discounted and auto-exonerated. If the clean sample is
+    // too small to judge AND the raw career is anomalous, the audit decides.
+    if(clean.att<20&&raw.sel>=.60&&raw.att>=40){
+      verdict='confirm';
+      verdictNote='clean sample too small to judge ('+clean.att+' att) with anomalous raw career — timing audit required';
+    }
+    return {raw,clean,cleanSet,verdict,verdictNote};
+  };
+  let ev=evaluate();
+  // Stage 3: ambiguous WATCH at meaningful selectivity — extend to 100 matches.
+  // Depth tests PERSISTENCE (streak vs. trait); it cannot distinguish an
+  // honest high-end player (sound-cue users run 40-45%) from a humanized
+  // script at the same rate — only the timing audit answers mechanism.
+  if(ev.verdict==='watch'&&ev.clean.sel>=.45&&histIds.length>allIds.length){
+    const extIds=histIds.slice(allIds.length,100);
+    if(extIds.length){
+      const extRecs=await getRecs(extIds,(d,t)=>phase(2,`${acct}: extended history ${d}/${t}`));
+      for(const id of extIds) ingest(id,extRecs.get(id));
+      ev=evaluate();
+      if(ev.verdict==='watch') ev.verdictNote='borderline after '+perMatch.length+' matches — depth cannot settle this; run the timing audit';
+    }
+  }
+  const discounted=perMatch.length-ev.cleanSet.length;
+  return {perMatch,sel:ev.raw.sel,att:ev.raw.att,dropMaxSel:ev.raw.dropMaxSel,spikes:ev.raw.spikes,
+    clean:ev.clean,cleanSet:ev.cleanSet,discounted,verdict:ev.verdict,verdictNote:ev.verdictNote,totalHistory};
+}
+
+// -------------------------------------------------- phase IV: autopsy
+// ONE DemoFusion job per match (per the API dev — 5x cheaper on their compute
+// and our rate limit). All five tables ride in a single UNION ALL: every
+// branch is padded to the same (src, tick, c1..c4) shape and every payload
+// column is CAST to VARCHAR so the union type-checks across heterogeneous
+// schemas (bools, floats, 64-bit steamIDs, entity handles). The client
+// demuxes rows by src and restores the original field names + types, so
+// everything downstream of the fetch is untouched.
+const Q_ALL=`
+SELECT 'parry' AS src, CAST(tick AS BIGINT) AS tick,
+       CAST("m_hOwnerEntity" AS VARCHAR) AS c1,
+       CAST("m_flParryStartTime" AS VARCHAR) AS c2,
+       CAST("m_bAttackParried" AS VARCHAR) AS c3,
+       CAST("m_flParrySuccessEndTime" AS VARCHAR) AS c4
+FROM CCitadel_Ability_MeleeParry
+UNION ALL
+SELECT 'melee', CAST(tick AS BIGINT),
+       CAST("m_hOwnerEntity" AS VARCHAR),
+       CAST("m_eCurrentAttackType" AS VARCHAR),
+       CAST("m_flStateStartTime" AS VARCHAR),
+       CAST("m_flAttackTriggeredTime" AS VARCHAR)
+FROM CCitadel_Ability_HoldMelee
+UNION ALL
+SELECT DISTINCT 'roster', CAST(NULL AS BIGINT),
+       CAST("m_steamID" AS VARCHAR),
+       CAST("m_hHeroPawn" AS VARCHAR),
+       CAST("m_PlayerDataGlobal__m_nHeroID" AS VARCHAR),
+       CAST(NULL AS VARCHAR)
+FROM CCitadelPlayerController WHERE "m_steamID" IS NOT NULL
+UNION ALL
+SELECT 'clock', CAST(tick AS BIGINT),
+       CAST("m_pGameRules__m_nMatchClockUpdateTick" AS VARCHAR),
+       CAST("m_pGameRules__m_flMatchClockAtLastUpdate" AS VARCHAR),
+       CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR)
+FROM CCitadelGameRulesProxy WHERE "m_pGameRules__m_nMatchClockUpdateTick" IS NOT NULL
+UNION ALL
+SELECT 'spellshield', CAST(tick AS BIGINT),
+       CAST("m_hOwnerEntity" AS VARCHAR),
+       CAST("m_flCooldownStart" AS VARCHAR),
+       CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR)
+FROM CCitadel_ArmorUpgrade_SpellShield WHERE "m_flCooldownStart" > 0`;
+// attack type now arrives as VARCHAR post-cast: a short decimal ('1','2') if
+// the engine stored a number, or a raw byte-dump ('0200…') if it stored
+// bytes — the old typeof split, now decided by shape. Deadlock's attack
+// types are tiny enums, so the decimal/hex ambiguity at '10'+ never bites
+// (anything unrecognized lands in the "unclear" column regardless).
+const eByte=h=>{
+  if(h==null) return 0;
+  const s=String(h);
+  return /^\d{1,3}$/.test(s)?Number(s):(parseInt(s.slice(0,2),16)||0);
+};
+const TICKRATE=60; // FALLBACK only — each autopsy measures the replay's real rate from melee (tick, game-time) pairs; this is used when a demo has too few samples to regress
+// empirical windup calibration: "hero:type" -> windup ms samples, accumulated
+// from every autopsy (assets expose melee damage but NOT timing — demos are
+// the only timing source). Exported with the screen JSON.
+state.windupCal=state.windupCal??{};
+async function submitJob(matchId,query){
+  if(state.budget<=0) throw new Error('BUDGET');
+  state.budget--;
+  const r=await fetch(`${BASE}/v1/matches/demo/query`,{method:'POST',headers:headers(),
+    body:JSON.stringify({match_id:matchId,query:query.replace(/\s+/g,' ').trim(),format:'ndjson'})});
+  if(r.status===429) throw new Error('RATELIMIT');
+  if(r.status===404) throw new Error('NODEMO');
+  if(!r.ok) throw new Error(r.status+': '+(await r.text()).slice(0,120));
+  return (await r.json()).job_id;
+}
+async function awaitJob(jobId){
+  for(;;){
+    const s=await get(`${BASE}/v1/matches/demo/query/${jobId}`);
+    if(s.status==='done') return s.result_url;
+    if(s.status==='failed') throw new Error(('job failed: '+(s.error??'')).slice(0,160));
+    await sleep(5000);
+  }
+}
+async function autopsy(matchId,suspects){
+  const job=await submitJob(matchId,Q_ALL);
+  log(`  [combined 5-table query] job ${job} — 1 submission for this match (${state.budget} left)`);
+  const url=await awaitJob(job);
+  let text;
+  try{ text=await (await fetch(url)).text(); }
+  catch(e){ throw new Error('RESULT_CORS: result stored off-API; open manually: '+url); }
+  // demux the union rows back into the five typed tables the analysis expects.
+  // steamIDs were CAST to VARCHAR in SQL, so they arrive as JSON strings and
+  // 64-bit precision survives without the old regex guard.
+  const num=v=>(v==null||v==='')?null:Number(v);
+  const tables={parry:[],melee:[],roster:[],clock:[],spellshield:[]};
+  for(const l of text.split('\n')){
+    if(!l.trim()) continue;
+    let r; try{ r=JSON.parse(l); }catch{ continue; }
+    switch(r.src){
+      case 'parry': tables.parry.push({tick:r.tick,m_hOwnerEntity:num(r.c1),
+        m_flParryStartTime:num(r.c2),
+        m_bAttackParried:(r.c3==='true'||r.c3==='1'),
+        m_flParrySuccessEndTime:num(r.c4)}); break;
+      case 'melee': tables.melee.push({tick:r.tick,m_hOwnerEntity:num(r.c1),
+        m_eCurrentAttackType:r.c2,m_flStateStartTime:num(r.c3),
+        m_flAttackTriggeredTime:num(r.c4)}); break;
+      case 'roster': tables.roster.push({m_steamID:r.c1,
+        m_hHeroPawn:num(r.c2),m_PlayerDataGlobal__m_nHeroID:num(r.c3)}); break;
+      case 'clock': tables.clock.push({tick:r.tick,
+        m_nMatchClockUpdateTick:num(r.c1),m_flMatchClockAtLastUpdate:num(r.c2)}); break;
+      case 'spellshield': tables.spellshield.push({tick:r.tick,
+        m_hOwnerEntity:num(r.c1),m_flCooldownStart:num(r.c2)}); break;
+    }
+  }
+  if(!tables.roster.length) throw new Error('combined query returned no roster rows — demux failed or the union schema drifted; check one branch manually');
+  // ---- clock calibration (two systematic errors fixed here) ----
+  // (1) UNIT MISMATCH: m_nMatchClockUpdateTick is a SERVER tick stored as a
+  //     property value; the `tick` column is the DEMO tick. Comparing them
+  //     directly shifts every converted time by the constant server->demo
+  //     offset. Fix: anchor each clock value at the first DEMO tick it was
+  //     observed — same counter as the event ticks. First-seen lags the true
+  //     update by at most one snapshot (~ticks), vs an offset worth ~seconds.
+  // (2) RATE ERROR: extrapolating at a hardcoded 60 drifts with elapsed time.
+  //     Fix: measure this replay's actual ticks/sec by regressing demo tick
+  //     against m_flStateStartTime (game seconds) across all melee instances —
+  //     hundreds of (tick, time) pairs per match, no constant needed.
+  const ratePairs=new Map(); // stateStart(ms) -> earliest demo tick observed
+  for(const r of tables.melee){
+    const ss=r.m_flStateStartTime??0; if(ss<=0||r.tick==null) continue;
+    const k=Math.round(ss*1000);
+    if(!ratePairs.has(k)||r.tick<ratePairs.get(k)) ratePairs.set(k,r.tick);
+  }
+  let rate=TICKRATE;
+  {
+    const pts=[...ratePairs.entries()].map(([ms,t])=>({s:ms/1000,t})).sort((a,b)=>a.s-b.s);
+    if(pts.length>=8){
+      const a=pts[Math.floor(pts.length*0.10)], b=pts[Math.floor(pts.length*0.90)];
+      if(b.s-a.s>120){ const est=(b.t-a.t)/(b.s-a.s); if(est>30&&est<200) rate=est; }
+    }
+  }
+  // anchors keyed by update tick, each pinned to its first demo-tick sighting
+  const byUpdate=new Map();
+  for(const r of tables.clock??[]){
+    if(r.m_nMatchClockUpdateTick==null||r.m_flMatchClockAtLastUpdate==null||r.tick==null) continue;
+    const cur=byUpdate.get(r.m_nMatchClockUpdateTick);
+    if(!cur||r.tick<cur.t) byUpdate.set(r.m_nMatchClockUpdateTick,
+      {t:r.tick,c:r.m_flMatchClockAtLastUpdate,u:r.m_nMatchClockUpdateTick});
+  }
+  // diagnostic: demo-tick minus server-update-tick per anchor. A large stable
+  // median = the unit mismatch was real, and this is its size in seconds.
+  const offs=[...byUpdate.values()].map(a=>a.t-a.u).sort((x,y)=>x-y);
+  const medOff=offs.length?offs[Math.floor(offs.length/2)]:null;
+  const anchors=[...byUpdate.values()].sort((a,b)=>a.t-b.t);
+  // the anchor already in effect when recording began first serializes at the
+  // demo's opening snapshot — its first-seen tick is the recording start, not
+  // the update moment. Rebase it by back-extrapolating from the next anchor.
+  if(anchors.length>=2){
+    const a0=anchors[0],a1=anchors[1];
+    if(a1.c>a0.c){
+      const impliedT=a1.t-(a1.c-a0.c)*rate;
+      if(impliedT>a0.t) a0.t=impliedT;
+    }
+  }
+  log(`  clock calibration: ${rate.toFixed(2)} ticks/s measured (${ratePairs.size} melee samples), ${anchors.length} anchors, demo-vs-server tick offset ~${medOff==null?'?':medOff+' ticks ('+(medOff/rate).toFixed(1)+'s)'}`);
+  const toClock=(tick)=>{
+    if(!anchors.length) return null;
+    let i=0; while(i+1<anchors.length&&anchors[i+1].t<=tick) i++;
+    const a=anchors[i], b=anchors[i+1];
+    let c;
+    if(b&&b.t>a.t){
+      // inside a bracketed span: interpolate. A flat span (b.c===a.c) is a
+      // pause — the clock holds. A rising span self-calibrates its own rate.
+      c=b.c>a.c ? a.c+(tick-a.t)*(b.c-a.c)/(b.t-a.t) : a.c;
+    }else{
+      c=a.c+(tick-a.t)/rate; // beyond the last anchor: measured rate, not 60
+    }
+    return Math.max(0,c);
+  };
+  const mmss=(s)=>s==null?'?':Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');
+  // SpellShield (Counterspell) activations per owner: each block starts a
+  // cooldown. Parry successes coinciding with one are SPELL-BLOCKS, not
+  // melee parries — they must never land in the no-warning column.
+  const ssByOwner=new Map();
+  const ssSeen=new Set();
+  for(const r of tables.spellshield??[]){
+    const k=r.m_hOwnerEntity+':'+Math.round((r.m_flCooldownStart??0)*100);
+    if(ssSeen.has(k)) continue; ssSeen.add(k);
+    (ssByOwner.get(r.m_hOwnerEntity)??ssByOwner.set(r.m_hOwnerEntity,[]).get(r.m_hOwnerEntity)).push(r.tick);
+  }
+  const pawnToAcct=new Map(), pawnToHero=new Map();
+  for(const r of tables.roster) if(r.m_steamID){
+    pawnToAcct.set(r.m_hHeroPawn,Number(BigInt(r.m_steamID)-S64));
+    if(r.m_PlayerDataGlobal__m_nHeroID!=null) pawnToHero.set(r.m_hHeroPawn,r.m_PlayerDataGlobal__m_nHeroID);
+  }
+  const per=new Map();
+  for(const r of tables.parry){
+    const rec=per.get(r.m_hOwnerEntity)??{press:new Map(),succ:[]};
+    if((r.m_flParryStartTime??0)>0){
+      const cs=Math.round(r.m_flParryStartTime*100);
+      if(!rec.press.has(cs)||r.tick<rec.press.get(cs)) rec.press.set(cs,r.tick);
+    }
+    if(r.m_bAttackParried===true&&(r.m_flParrySuccessEndTime??0)>0) rec.succ.push({tick:r.tick,end:r.m_flParrySuccessEndTime});
+    per.set(r.m_hOwnerEntity,rec);
+  }
+  const instByKey=new Map();
+  for(const r of tables.melee){
+    const ss=r.m_flStateStartTime??0; if(ss<=0) continue;
+    const key=r.m_hOwnerEntity+':'+Math.round(ss*1000);
+    let i=instByKey.get(key);
+    if(!i){i={key,owner:r.m_hOwnerEntity,tick:r.tick,type:eByte(r.m_eCurrentAttackType),trigTick:null};instByKey.set(key,i);}
+    else{i.type=Math.max(i.type,eByte(r.m_eCurrentAttackType));if(r.tick<i.tick)i.tick=r.tick;}
+    if((r.m_flAttackTriggeredTime??0)>0&&r.tick>=i.tick&&(i.trigTick===null||r.tick<i.trigTick)) i.trigTick=r.tick;
+  }
+  const inst=[...instByKey.values()];
+  // accumulate empirical windups per (hero,type)
+  for(const i of inst){
+    if(i.trigTick===null||i.trigTick<=i.tick) continue;
+    const hero=pawnToHero.get(i.owner); if(hero==null) continue;
+    (state.windupCal[hero+':'+i.type]??=[]).push(Math.round((i.trigTick-i.tick)/rate*1000));
+  }
+  const lines=[];
+  for(const [owner,rec] of per){
+    const acct=pawnToAcct.get(owner);
+    // dedupe successes: snapshot re-serialization emits identical rows; one
+    // success = one distinct success-end time (keep earliest tick for linkage)
+    const uniq=new Map();
+    for(const s of rec.succ){const k=Math.round(s.end*100); if(!uniq.has(k)||s.tick<uniq.get(k).tick) uniq.set(k,s);}
+    const succs=[...uniq.values()];
+    const succN=succs.length;
+    // PHANTOM successes: no visible press within 1.2s before the success end.
+    // A speculative (human) press serializes as its own row before the success
+    // resets it; a last-instant reactive trigger (script signature) collapses
+    // into the same update interval and leaves no press row. Low phantom share
+    // is human; high phantom share at volume is the auto-parry tell.
+    const pressTimes=[...rec.press.keys()]; // centiseconds
+    const phantoms=succs.filter(s=>{
+      const e=Math.round(s.end*100);
+      return !pressTimes.some(p=>e-p>=0&&e-p<=120);
+    }).length;
+    const total=rec.press.size+phantoms;
+    if(total===0) continue;
+    const caught={1:0,2:0,3:0,unknown:0};
+    const reactions=[]; // ms: press tick minus attacker windup-start tick
+    const lightTimes=[]; // game-clock seconds of no-warning parries
+    const pressTicks=[...rec.press.values()].sort((a,b)=>a-b);
+    const ownSS=ssByOwner.get(owner)??[];
+    const succTicks=new Set(succs.map(s=>s.tick));
+    const orphanPresses=[...rec.press.values()].filter(pt=>!succs.some(s=>s.tick-pt>=0&&s.tick-pt<=130));
+    for(const s of succs){
+      // spell-block check FIRST: SpellShield cooldown starting within ±30
+      // ticks (~0.5s) of this success = Counterspell block, not a melee parry
+      if(ownSS.some(t=>Math.abs(s.tick-t)<=30)){caught.unknown++;continue;}
+      const c=inst.filter(i=>i.owner!==owner&&s.tick-i.tick>=-10&&s.tick-i.tick<=150)
+        .sort((a,b)=>Math.abs(s.tick-a.tick)-Math.abs(s.tick-b.tick))[0];
+      if(c&&caught[c.type]!==undefined){
+        caught[c.type]++;
+        if(c.type===1) lightTimes.push(s.tick); // ticks — converted to scoreboard clock at render
+        const pt=pressTicks.filter(t=>s.tick-t>=0&&s.tick-t<=130).pop();
+        if(pt!==undefined&&pt>=c.tick) reactions.push((pt-c.tick)/rate*1000);
+      } else caught.unknown++;
+    }
+    lines.push({acct:acct??('pawn'+owner),isSuspect:suspects.includes(acct),attempts:total,succ:succN,phantoms,caught,reactions,lightTimes,ssTicks:ownSS,orphanPresses,toClock,mmss});
+  }
+  lines.sort((a,b)=>b.succ-a.succ);
+  return lines;
+}
+
+// -------------------------------------------------- rendering
+const HERO_NOTE='hero ids shown raw — cross-check assets.deadlock-api.com/v2/heroes';
+function selClass(v){return v>=.7?'sel-hot':v>=.55?'sel-warm':'';}
+let sortKey='sel',sortDir=-1;
+function renderScreen(){
+  const rows=[...state.rows].sort((a,b)=>{
+    const d=a[sortKey]>b[sortKey]?1:a[sortKey]<b[sortKey]?-1:0;
+    return d*sortDir;
+  }).slice(0,60);
+  const flagged=new Set(state.flags.map(f=>f.acct));
+  let h='<thead><tr>'+[['acct','account'],['matches','lobbies'],['att','attempts'],['succ','successes'],['miss','misses'],['sel','selectivity']]
+    .map(([k,l])=>`<th data-k="${k}">${l}${sortKey===k?(sortDir<0?' ▾':' ▴'):''}</th>`).join('')+'<th>heroes</th></tr></thead><tbody>';
+  for(const r of rows){
+    h+=`<tr class="${r.acct===state.you?'you':''} ${flagged.has(r.acct)?'flagged':''}">
+      <td>${r.acct}${r.acct===state.you?' <span class="muted">(you)</span>':''}</td>
+      <td>${r.matches}</td><td>${r.att}</td><td>${r.succ}</td><td>${r.miss}</td>
+      <td class="${selClass(r.sel)}">${Math.round(r.sel*100)}%</td>
+      <td class="muted">${[...r.heroes].slice(0,4).map(heroLabel).join(', ')}${r.heroes.size>4?' +'+(r.heroes.size-4):''}</td></tr>`;
+  }
+  $('tbl-screen').innerHTML=h+'</tbody>';
+  $('screen-sub').textContent=`${state.rows.length} accounts · top 60 by ${sortKey} · click headers to sort · ${HERO_NOTE}`;
+  $('sec-screen').hidden=false;
+  $('tbl-screen').querySelectorAll('th[data-k]').forEach(th=>th.onclick=()=>{
+    const k=th.dataset.k; if(sortKey===k)sortDir*=-1; else{sortKey=k;sortDir=-1;} renderScreen();
+  });
+}
+function strip(perMatch){
+  const mx=Math.max(1,...perMatch.map(r=>r.s+r.m));
+  return perMatch.map(r=>{
+    const att=r.s+r.m, sel=att?r.s/att:0, hgt=Math.max(2,Math.round(att/mx*42));
+    const annotated=!r.discountItem&&!r.heroContam&&r.items&&r.items.length>0;
+    const cls=r.heroContam?'kit':(r.discountItem?'cs':(annotated?'an':(att>=8&&sel>=.7?'sp':sel>=.7?'hot':'')));
+    const why=r.heroContam?` [${heroLabel(r.hero)} Riposte — kit writes to parry counter]`:(r.items?.length?` [${r.items.join('+')}]`:'');
+    return `<i class="${cls}" style="height:${hgt}px" title="match ${r.matchId}: ${r.s}S/${r.m}M (${Math.round(sel*100)}%) · ${heroLabel(r.hero)}${why}"></i>`;
+  }).join('');
+}
+function renderBoard(){
+  const stampOf={confirm:['confirm','CONFIRMED'],clean:['clean','EXONERATED'],watch:['watch','WATCH']};
+  $('board').innerHTML=state.flags.map(f=>{
+    const c=f.career;
+    if(!c) return `<div class="case"><h3>Account ${f.acct}</h3><div class="sub">investigating…</div></div>`;
+    if(c.error) return `<div class="case"><h3>Account ${f.acct}</h3><div class="sub">career unavailable: ${esc(c.error)}</div><div class="stamp watch">UNVERIFIED</div></div>`;
+    const [cls,txt]=stampOf[c.verdict];
+    return `<div class="case">
+      <div class="stamp ${cls}">${txt}</div>
+      <h3>Account ${f.acct}</h3>
+      <div class="sub">flagged at ${Math.round(f.sel*100)}% in shared lobbies (${f.succ}S/${f.miss}M)<br>plays: ${(()=>{
+        const pm=c?.perMatch;
+        if(pm&&pm.length){
+          const t=new Map();
+          for(const m of pm) t.set(m.hero,(t.get(m.hero)??0)+1);
+          const top=[...t.entries()].sort((a,b)=>b[1]-a[1]);
+          return top.slice(0,3).map(([h,n])=>`${heroLabel(h)} ×${n}`).join(', ')+(top.length>3?` +${top.length-3} more`:'');
+        }
+        return [...f.heroes].slice(0,5).map(heroLabel).join(', ')+' (shared lobby only)';
+      })()}</div>
+      <div class="kv">
+        <div><b class="${selClass(c.sel)}">${Math.round(c.sel*100)}%</b><span>all matches (${c.att} parries)</span></div>
+        <div><b class="${selClass(c.clean.sel)}">${Math.round(c.clean.sel*100)}%</b><span>after set-asides (${c.clean.att} parries)</span></div>
+        <div><b class="${c.clean.spikes.length>=3?'sel-hot':''}">${c.clean.spikes.length}</b><span>unexplained hot matches · ${c.discounted} set aside</span></div>
+      </div>
+      <div class="strip">${strip(c.perMatch)}</div>
+      <div class="striplab">career, oldest → newest · bar height = parry attempts · hover any bar for details</div>
+      <div class="legend">
+        <span><i class="chip c-sp"></i>high parry rate, no innocent explanation</span>
+        <span><i class="chip c-hot"></i>high rate, low volume</span>
+        <span><i class="chip c-cs"></i>had Counterspell — set aside</span>
+        <span><i class="chip c-kit"></i>${kitLabel()} — set aside</span>
+        <span><i class="chip c-an"></i>had Indomitable — no effect, counts</span>
+        <span><i class="chip"></i>normal match</span>
+      </div>
+      ${c.totalHistory!=null&&c.totalHistory<30?`<div class="autopsy-note" style="color:var(--watch)">fresh account: only ${c.totalHistory} recorded matches — context, not evidence (smurfs exist), but new accounts with unusual builds warrant re-screening</div>`:''}
+      ${c.verdictNote?`<div class="autopsy-note" style="color:var(--watch)">⚠ ${c.verdictNote}</div>`:''}
+      <div class="autopsy-note">${f.autNote??(c.verdict==='confirm'?'queued for timing audit':'no audit spent')}
+        ${!f.autNote||!f.autNote.includes('audit complete')&&!f.autNote.includes('skeptic run): match')?`<button class="ghost demo-btn" data-acct="${f.acct}" style="margin-top:8px">Not convinced? Run the timing audit</button>`:''}</div>
+    </div>`;
+  }).join('');
+  $('sec-board').hidden=state.flags.length===0;
+}
+function renderAutopsy(matchId,lines,note,metaCounts){
+  const el=document.createElement('div'); el.className='aut';
+  if(note){el.innerHTML=`<h3>Match ${matchId}</h3><div class="muted">${esc(note)}</div>`;}
+  else{
+    let rows=lines.map(l=>{
+      const ph=l.succ?l.phantoms/l.succ:0;
+      const phFlag=l.succ>=4&&ph>=.5;
+      const rx=[...(l.reactions??[])].sort((a,b)=>a-b);
+      const rxMed=rx.length?Math.round(rx[Math.floor(rx.length/2)]):null;
+      const rxMin=rx.length?Math.round(rx[0]):null;
+      // 150ms, not 180: players who swap the heavy-melee sound for a distinct
+      // parry cue react by EAR (~140-170ms typical) — legitimately faster than
+      // visual reaction. The flag must sit below the fastest honest human.
+      const rxFlag=rx.length>=3&&rxMed<150;
+      const rxDisp=rxMed===null?'-':(rx.length===1?rxMin+'ms (single parry)':`${rxMed}ms typical of ${rx.length} (fastest ${rxMin})`);
+      return `<tr class="${l.isSuspect?'suspect-row':''}">
+      <td>${esc(l.acct)}${l.isSuspect?' ◀ SUSPECT':''}</td><td>${l.attempts}</td><td>${l.succ}</td>
+      <td>${l.attempts?Math.round(l.succ/l.attempts*100):0}%</td>
+      <td class="${rxFlag?'lightflag':''}">${rxDisp}</td>
+      <td class="${phFlag?'lightflag':''}">${l.phantoms}${l.succ?` (${Math.round(ph*100)}%)`:''}</td>
+      <td class="${l.caught[1]>=2?'lightflag':''}">${l.caught[1]}</td><td>${l.caught[2]+l.caught[3]}</td><td class="muted">${l.caught.unknown}</td></tr>`;}).join('');
+    // physical-evidence verdict for each suspect row
+    let verdicts='';
+    const suspectRows=lines.filter(x=>x.isSuspect);
+    if(!suspectRows.length&&metaCounts){
+      verdicts+=`<div class="autopsy-note" style="border:none;padding-top:4px;color:var(--watch)">⚠ flagged account not found in this replay's parry data — if their metadata shows parry stats for this match, ALL of it came from kit/ability sources, never the parry button.</div>`;
+    }
+    for(const l of suspectRows){
+      // metadata-vs-replay reconciliation: the counter pools kit/ability
+      // sources; the replay's parry ability records only real button usage.
+      const mc=metaCounts?.[l.acct];
+      if(mc){
+        const gap=(mc.s??0)-l.succ;
+        if(gap>1) verdicts+=`<div class="autopsy-note" style="border:none;padding-top:4px"><b>${esc(l.acct)}</b> — the match counter credits them <b>${mc.s} successes</b>, but the replay's parry ability shows only <b>${l.succ}</b> landed by button. The other <b>${gap}</b> came from sources outside the melee-parry ability — Counterspell spell-blocks (same button, separate machinery) or kit output like Riposte. The melee columns below are unaffected; this gap is effectively a Counterspell/kit usage meter.</div>`;
+      }
+      const rx=[...(l.reactions??[])].sort((a,b)=>a-b);
+      const rxMed=rx.length?Math.round(rx[Math.floor(rx.length/2)]):null;
+      const ph=l.succ?Math.round(l.phantoms/l.succ*100):0;
+      const probs=[];
+      if(rxMed!==null&&rxMed<150&&rx.length>=3) probs.push(`typical reaction ${rxMed}ms — faster than any honest human, even reacting by sound`);
+      if(l.succ>=4&&ph>=50) probs.push(`${ph}% of parries pressed too fast for the replay to record (script signature)`);
+      if(l.caught[1]>=2){
+        const conv=l.lightTimes.map(t=>l.toClock?l.toClock(t):null);
+        const ts=conv.some(x=>x!=null)
+          ? conv.map(l.mmss).join(', ')+' (scoreboard clock)'
+          : l.lightTimes.map(t=>'tick '+t).join(', ')+' (clock anchors unavailable — scrub ±40s)';
+        probs.push(`${l.caught[1]} no-warning attacks parried (not humanly reactable) — VERIFY IN REPLAY at game clock ${ts}. Attack matching is approximate: if the replay shows these were heavies or an already-open window, treat as instrument error, not evidence`);
+      }
+      if(l.orphanPresses&&l.orphanPresses.length){
+        const times=[...l.orphanPresses].sort((a,b)=>a-b)
+          .map(t=>{const c=l.toClock?l.toClock(t):null;return c==null?('tick '+t):l.mmss(c);}).join(', ');
+        verdicts+=`<div class="autopsy-note" style="border:none;padding-top:4px">
+          <b>${esc(l.acct)}</b> — <b>${l.orphanPresses.length} presses with no melee parry</b> (Counterspell blocks and/or whiffs) at scoreboard clock: ${times}.
+          Manual review guide: for each, ask <i>could they see or hear the threat coming?</i> Blocking
+          predictable damage (DOT ticks, telegraphed casts) is legitimate skill. Blocking projectiles
+          arriving from fog with no audio cue, repeatedly, is the spell-domain impossible-information
+          tell — clip those. Whiffs at random moments are human texture, not evidence.</div>`;
+      }
+      verdicts+=`<div class="autopsy-note" style="border:none;padding-top:4px">
+        <b>${esc(l.acct)}</b> — ${probs.length
+          ? `<span style="color:var(--confirm)">timing anomalies: ${probs.join('; ')}</span>`
+          : `<span style="color:var(--clean)">timing looks human${rxMed!==null?` — typical reaction ${rxMed}ms`:''}${l.succ?`, ${ph}% too-fast presses`:''}, ${l.caught[1]} no-warning attacks parried. The replay data itself clears them.</span>`}
+      </div>`;
+    }
+    el.innerHTML=`<h3>Match ${matchId}</h3>
+      ${verdicts}
+      <div class="scroll"><table><thead><tr><th>player</th><th>parries thrown</th><th>parries landed</th><th>hit rate</th>
+      <th>reaction time</th><th>too-fast presses</th>
+      <th>vs no-warning attacks</th><th>vs telegraphed attacks</th><th>vs abilities / unclear</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="howto">
+        <div><b>Reaction time</b> — how long after the attacker started their swing the player pressed parry. Visual reaction takes ~200ms; players who swap the heavy-melee sound for a louder cue react by ear at ~150-170ms, which is legitimate. One fast parry is a good read; a typical value under 150ms across several parries flags red — that's faster than any honest human, script territory.</div>
+        <div><b>Too-fast presses</b> — the parry landed, but the press was so close to the hit that the replay never captured it separately. Humans press early and hopeful, so this is rare; a last-instant script does it constantly.</div>
+        <div><b>Vs no-warning attacks</b> — light jabs give ~0.1s of warning. Parrying one is luck or an already-open window; parrying several on reaction isn't humanly possible — flags red at 2+.</div>
+        <div><b>Vs abilities / unclear</b> — includes Counterspell parries (they counter abilities, not melees) and moments the replay didn't record cleanly. A big number here on a Counterspell buyer is normal, not suspicious.</div>
+        <div>Players who never pressed parry are omitted. Kit abilities like Apollo's Riposte don't use the parry button, so they never appear here — that's why a Riposte user's numbers can be far below their match-counter stats (see the reconciliation note above the table when it applies).</div>
+        <div>Attack matching is approximate — treat counts as close, not exact.</div>
+      </div>`;
+  }
+  $('autopsies').appendChild(el); $('sec-aut').hidden=false;
+}
+
+// -------------------------------------------------- orchestrator
+$('run').onclick=async()=>{
+  if(state.running) return;
+  const you=resolveId($('sid').value);
+  if(you==null){$('status').innerHTML='Could not parse that ID. Use a steamID64 (7656119…), a /profiles/ URL, [U:1:x], or an account id. Vanity /id/ URLs need the numeric form.';return;}
+  state.running=true;$('run').disabled=true;
+  state.you=you;state.budget=Number($('nb').value)||18;
+  state.xbrawl=$('xbrawl').checked;state.xbots=$('xbots').checked;
+  state.rows=[];state.flags=[];$('autopsies').innerHTML='';$('board').innerHTML='';$('log').textContent='';
+  $('status').innerHTML=`Case open on account <b>${you}</b>${$('key').value?' · API key active':' · no key: 20 demo submissions/hour (= 20 audited matches — audits are 1 combined query each)'}`;
+  log(`case opened: account ${you}`);
+  try{
+    const {rows,flags}=await screen(you,Number($('nm').value)||50);
+    state.rows=rows;state.flags=flags;renderScreen();renderBoard();
+    log(`screen: ${rows.length} accounts, ${flags.length} flagged`);
+    phase(2,'0/'+flags.length);
+    if(flags.length>9){
+      log(`NOTE: ${flags.length} flags — careers use stored (ClickHouse) match history, which is not meaningfully rate-limited; only Steam-fresh refreshes for bot-friend accounts are capped. All investigations will run.`);
+    }
+    let done=0;
+    for(const f of flags){
+      f.career=await career(f.acct,Number($('nc').value)||40);
+      done++;phase(2,`${done}/${flags.length}`);renderBoard();
+      const c=f.career;
+      log(c.error?`career ${f.acct}: unavailable (${c.error})`:
+        `career ${f.acct}: raw ${Math.round(c.sel*100)}% (${c.att} att) | clean ${Math.round(c.clean.sel*100)}% (${c.clean.att} att, ${c.discounted} matches discounted for items/kit) | ${c.clean.spikes.length} clean spikes → ${c.verdict.toUpperCase()}`);
+    }
+    phase(2,'done','done');
+    const confirmed=flags.filter(f=>f.career?.verdict==='confirm'||f.career?.error);
+    phase(3,confirmed.length?confirmed.length+' queued':'not needed — all cases resolved by career data');
+    for(const f of confirmed){
+      try{ await auditAccount(f,[f.acct]); }
+      catch(e){ renderAutopsy('—',null,'Stopped: API budget exhausted. Rerun in an hour — save the session cache first.'); log('budget exhausted — stopping audits'); break; }
+      renderBoard();
+    }
+    phase(3,confirmed.length?'done':'not needed — no confirmed suspects','done');
+    $('status').innerHTML='Case complete. Review the board — stamps are the funnel\'s opinion; the timing audits are the evidence.';
+  }catch(e){
+    log('FATAL: '+e.message);
+    $('status').innerHTML='Run stopped: '+esc(e.message);
+  }finally{state.running=false;$('run').disabled=false;}
+};
+
+// Candidate ladder: every match worth auditing for an account, newest first.
+// Spikes are preferred (most incriminating), but recent ordinary matches with
+// real parry volume are included — a fresh match still samples the player's
+// timing behavior, and its replay is far more likely to be retrievable.
+function auditCandidates(f){
+  const c=f.career??{};
+  const pool=[...(c.clean?.spikes??[]),...(c.spikes??[]),
+    ...([...(c.perMatch??[])].filter(m=>(m.s+m.m)>=4))];
+  const seen=new Set(); const out=[];
+  for(const m of pool.sort((a,b)=>(b.start??0)-(a.start??0))){
+    if(seen.has(m.matchId)) continue; seen.add(m.matchId); out.push(m);
+  }
+  if(!out.length&&f.target) out.push(f.target);
+  return out;
+}
+// Walk candidates until one audits successfully. NOTE: a missing replay does
+// NOT necessarily mean it expired — replays only exist on Valve's side once
+// someone requests them (watching the match in-client mints it).
+async function auditAccount(f,suspects,maxTries=4){
+  const cands=auditCandidates(f).slice(0,maxTries);
+  if(!cands.length){f.autNote='no auditable matches found';return false;}
+  for(const [i,t] of cands.entries()){
+    log(`audit ${f.acct}: trying match ${t.matchId} (${i+1}/${cands.length})`);
+    for(let attempt=0;attempt<2;attempt++){
+      try{
+        const lines=await autopsy(t.matchId,suspects);
+        renderAutopsy(t.matchId,lines,null,{[f.acct]:{s:t.s,m:t.m}});
+        f.autNote='timing audit complete: match '+t.matchId+(i>0?` (${i} earlier candidate${i>1?'s':''} had no replay)`:'');
+        return true;
+      }catch(e){
+        if(e.message==='BUDGET'||e.message==='RATELIMIT'){f.autNote='audit deferred: budget exhausted';throw e;}
+        if(e.message==='NODEMO'){log(`  no replay for ${t.matchId} (expired, or never requested from Valve) — trying next`);break;}
+        if(attempt===0){log(`  transient failure (${e.message.slice(0,80)}) — retrying once`);continue;}
+        log(`  failed twice — moving on`);
+      }
+    }
+  }
+  const tried=auditCandidates(f).slice(0,maxTries).map(t=>t.matchId).join(', ');
+  f.autNote='no replay retrievable — replays only exist once someone requests them from Valve (and expire after ~2-3 weeks). Fix: in Deadlock\'s replay viewer, watch any of these matches: '+tried+' — then rerun this audit. (The API cannot trigger this; only the game client can.)';
+  return false;
+}
+
+// Skeptic's override: one-off demo autopsy for any case, verdict be damned.
+// Picks the account's most incriminating available match (newest clean spike,
+// else newest raw spike, else their biggest parry match) and lets the timing
+// data — reaction latency, phantom share, parried lights — make the argument.
+$('board').addEventListener('click', async (ev)=>{
+  const btn=ev.target.closest('.demo-btn'); if(!btn) return;
+  const acct=Number(btn.dataset.acct);
+  const f=state.flags.find(x=>x.acct===acct); if(!f||state.running) return;
+  btn.disabled=true;btn.textContent='Auditing…';
+  log(`skeptic override for account ${acct} (budget ${state.budget})`);
+  try{ await auditAccount(f,[acct]); }
+  catch(e){ /* budget stop — note already set by walker */ }
+  renderBoard();
+});
+
+$('ex-cache').onclick=()=>{
+  const blob=new Blob([JSON.stringify({parrywatchCache:1,matches:[...state.meta.entries()]})],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='parrywatch-cache.json';a.click();
+};
+$('im-cache').onclick=()=>$('im-cache-file').click();
+$('im-cache-file').onchange=ev=>{
+  const f=ev.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{try{
+    const d=JSON.parse(r.result);
+    if(!d.parrywatchCache) throw new Error('not a parrywatch cache file');
+    for(const [k,v] of d.matches) state.meta.set(k,v);
+    log(`cache loaded: ${d.matches.length} matches — fetch phase will skip these`);
+  }catch(e){log('cache load failed: '+e.message);}};
+  r.readAsText(f);
+};
+$('ex-json').onclick=()=>{
+  const blob=new Blob([JSON.stringify({you:state.you,rows:state.rows,flags:state.flags.map(f=>({...f,heroes:[...f.heroes]})),windupCal:state.windupCal},null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='parrywatch-screen.json';a.click();
+};
+$('ex-md').onclick=()=>{
+  let md=`# parrywatch report — account ${state.you} — ${new Date().toISOString().slice(0,10)}\n\n## Flags\n`;
+  for(const f of state.flags){
+    const c=f.career;
+    md+=`\n### Account ${f.acct}\n- lobby screen: ${f.succ}S/${f.miss}M (${Math.round(f.sel*100)}%) over ${f.matches} shared lobbies\n`;
+    if(c&&!c.error) md+=`- career: ${Math.round(c.sel*100)}% over ${c.att} attempts, drop-max ${Math.round(c.dropMaxSel*100)}%, ${c.spikes.length} spike matches → **${c.verdict.toUpperCase()}**\n- ${f.autNote??''}\n`;
+  }
+  md+='\n---\n*Flags are statistical leads, not accusations.*\n';
+  const blob=new Blob([md],{type:'text/markdown'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='parrywatch-report.md';a.click();
+};
+</script>
+</body>
+</html>
